@@ -1,0 +1,160 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: SemVer release tag, for example v1.0.0
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  quality:
+    name: Lint and Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate release version
+        run: |
+          set -euo pipefail
+          version="${{ inputs.version }}"
+          if [[ ! "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Release version must use Go module SemVer tag notation, for example v1.0.0 or v1.0.0-rc.1."
+            exit 1
+          fi
+          if [ "${{ github.ref_name }}" != "${{ github.event.repository.default_branch }}" ]; then
+            echo "Run releases from the default branch: ${{ github.event.repository.default_branch }}."
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Check module tidiness
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+
+      - name: Check formatting
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Run vet
+        run: go vet ./...
+
+      - name: Run tests
+        run: go test -race -coverprofile=coverage.out ./...
+
+  build:
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+    needs: quality
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+          - goos: windows
+            goarch: arm64
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build artifact
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          build_date="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          artifact="setup_${VERSION}_${GOOS}_${GOARCH}"
+          mkdir -p "build/$artifact" dist
+          binary="build/$artifact/setup"
+          published_binary="dist/${artifact}"
+          if [ "$GOOS" = "windows" ]; then
+            binary="$binary.exe"
+            published_binary="$published_binary.exe"
+          fi
+
+          CGO_ENABLED=0 go build \
+            -trimpath \
+            -ldflags "-s -w -X github.com/strukturpiloten/container-setup.Version=$VERSION -X github.com/strukturpiloten/container-setup.Commit=$GITHUB_SHA -X github.com/strukturpiloten/container-setup.BuildDate=$build_date" \
+            -o "$binary" \
+            ./cmd/setup
+
+          cp "$binary" "$published_binary"
+          tar -czf "dist/$artifact.tar.gz" -C build "$artifact"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: setup-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum * > setup_${{ inputs.version }}_checksums.txt
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.version }}
+          name: setup ${{ inputs.version }}
+          generate_release_notes: true
+          prerelease: ${{ contains(inputs.version, '-') }}
+          files: |
+            dist/*
+          fail_on_unmatched_files: true

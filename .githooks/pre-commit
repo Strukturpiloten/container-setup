@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+mapfile -d '' staged_go_files < <(git diff --cached --name-only -z --diff-filter=ACMR -- '*.go')
+
+if [ "${#staged_go_files[@]}" -eq 0 ]; then
+	exit 0
+fi
+
+echo "Formatting staged Go files..."
+gofmt -w "${staged_go_files[@]}"
+git add "${staged_go_files[@]}"
+
+echo "Running go vet..."
+go vet ./...
