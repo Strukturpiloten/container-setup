@@ -36,6 +36,15 @@ const (
 
 var nowFunc = time.Now
 
+// Version is set at build time by release workflows.
+var Version = "dev"
+
+// Commit is set at build time by release workflows.
+var Commit = "unknown"
+
+// BuildDate is set at build time by release workflows.
+var BuildDate = "unknown"
+
 type options struct {
 	ConfigPath          string
 	Force               bool
@@ -161,6 +170,11 @@ type copySummary struct {
 }
 
 func Main() {
+	if versionRequested(os.Args[1:]) {
+		printVersion(os.Stdout)
+		return
+	}
+
 	quiet := quietRequested(os.Args[1:])
 	if err := run(os.Args[1:], os.Stdin, os.Stdout); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -172,6 +186,25 @@ func Main() {
 		}
 		os.Exit(1)
 	}
+}
+
+func versionRequested(args []string) bool {
+	for _, arg := range args {
+		if arg == "--" {
+			break
+		}
+		if arg == "-version" || arg == "--version" {
+			return true
+		}
+	}
+
+	return false
+}
+
+func printVersion(output io.Writer) {
+	fmt.Fprintf(output, "setup %s\n", Version)
+	fmt.Fprintf(output, "commit %s\n", Commit)
+	fmt.Fprintf(output, "built %s\n", BuildDate)
 }
 
 func run(args []string, stdin io.Reader, stdout io.Writer) error {

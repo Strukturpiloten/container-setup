@@ -25,6 +25,40 @@ func writeTestFile(t *testing.T, path string, content string, mode os.FileMode) 
 	}
 }
 
+func TestVersionRequested(t *testing.T) {
+	if !versionRequested([]string{"--version"}) {
+		t.Fatal("expected --version to request version output")
+	}
+	if !versionRequested([]string{"-version"}) {
+		t.Fatal("expected -version to request version output")
+	}
+	if versionRequested([]string{"--", "--version"}) {
+		t.Fatal("expected -- to stop version flag parsing")
+	}
+}
+
+func TestPrintVersion(t *testing.T) {
+	previousVersion := Version
+	previousCommit := Commit
+	previousBuildDate := BuildDate
+	Version = "v1.2.3"
+	Commit = "abc123"
+	BuildDate = "2026-05-27T12:00:00Z"
+	t.Cleanup(func() {
+		Version = previousVersion
+		Commit = previousCommit
+		BuildDate = previousBuildDate
+	})
+
+	var stdout bytes.Buffer
+	printVersion(&stdout)
+
+	expected := "setup v1.2.3\ncommit abc123\nbuilt 2026-05-27T12:00:00Z\n"
+	if stdout.String() != expected {
+		t.Fatalf("version output = %q, want %q", stdout.String(), expected)
+	}
+}
+
 func minimalSetupYAML() string {
 	return strings.Join([]string{
 		"version: 1",

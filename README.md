@@ -36,6 +36,36 @@ Or, from inside a configured project repository:
 go run ./cmd/setup
 ```
 
+Print build metadata:
+
+```sh
+go run ./cmd/setup --version
+```
+
+## CI/CD
+
+Pull requests and pushes to `main` run GitHub Actions checks for module tidiness, formatting, `go vet`, race-enabled tests, and a command build. Configure branch protection in GitHub so the CI workflow is required before merging.
+
+GitHub-hosted Alpine runners are not available in Actions, so the workflows intentionally use `ubuntu-latest`. If Alpine compatibility becomes important later, add a Linux container job on top of the Ubuntu runner or use a self-hosted Alpine runner.
+
+Renovate is configured in `.github/renovate.json` to update Go modules, GitHub Actions, and the explicit Go version in `go.mod`. Go versions are restricted to explicit stable patch releases such as `1.26.3`.
+
+The release workflow is manually triggered from GitHub Actions. Provide a Go module SemVer tag such as `v1.0.0`; the workflow validates the tag, runs the same quality checks, builds cross-platform `setup` binaries, embeds the version metadata with `-ldflags`, packages archives, generates SHA-256 checksums, and publishes all of them on a GitHub Release.
+
+Each release includes both direct binary assets and archives. Examples: `setup_v1.0.0_linux_amd64`, `setup_v1.0.0_windows_amd64.exe`, `setup_v1.0.0_linux_amd64.tar.gz`, and `setup_v1.0.0_checksums.txt`. Other repositories can download a direct binary asset and place or rename it as `setup` in their own `deps` directory.
+
+Release versions are not incremented automatically by this setup. The manual workflow uses the SemVer tag you provide. Automatic version bumps can be added later with a release automation tool if you want releases derived from commit history.
+
+## Git Hooks
+
+Install the repository-managed Git hooks once per clone:
+
+```sh
+./scripts/install-hooks.sh
+```
+
+The pre-commit hook autoformats staged Go files with `gofmt`, re-stages them, and runs `go vet ./...` before the commit is created.
+
 ## Repository Layout
 
 - `cmd/setup/main.go`: thin CLI entrypoint for the `setup` executable
