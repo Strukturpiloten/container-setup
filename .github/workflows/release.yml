@@ -16,15 +16,19 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  quality:
-    name: Lint and Test
+  prepare:
+    name: Prepare release source
     runs-on: ubuntu-latest
+    outputs:
+      source_sha: ${{ steps.update-source.outputs.source_sha }}
 
     steps:
       - name: Validate release version
         run: |
           set -euo pipefail
           version="${{ inputs.version }}"
+          api_url="${{ github.api_url }}/repos/${{ github.repository }}"
+
           if [[ ! "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
             echo "Release version must use Go module SemVer tag notation, for example v1.0.0 or v1.0.0-rc.1."
             exit 1
@@ -34,8 +38,80 @@ jobs:
             exit 1
           fi
 
+          release_status="$(curl -sS -o /dev/null -w '%{http_code}' \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'Authorization: Bearer ${{ github.token }}' \
+            "$api_url/releases/tags/$version")"
+          case "$release_status" in
+            200)
+              echo "A GitHub release for $version already exists. Refusing to overwrite an existing release."
+              exit 1
+              ;;
+            404)
+              ;;
+            *)
+              echo "Could not verify whether release $version already exists. GitHub API returned HTTP $release_status."
+              exit 1
+              ;;
+          esac
+
+          tag_status="$(curl -sS -o /dev/null -w '%{http_code}' \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'Authorization: Bearer ${{ github.token }}' \
+            "$api_url/git/ref/tags/$version")"
+          case "$tag_status" in
+            200)
+              echo "Git tag $version already exists. Refusing to publish a duplicate release version."
+              exit 1
+              ;;
+            404)
+              ;;
+            *)
+              echo "Could not verify whether tag $version already exists. GitHub API returned HTTP $tag_status."
+              exit 1
+              ;;
+          esac
+
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Update setup helper version
+        id: update-source
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          current_version="$(sed -n 's/^CONTAINER_SETUP_VERSION="\([^"]*\)"$/\1/p' setup.sh)"
+          if [ -z "$current_version" ]; then
+            echo "Could not read CONTAINER_SETUP_VERSION from setup.sh."
+            exit 1
+          fi
+
+          if [ "$current_version" != "$VERSION" ]; then
+            sed -i "s/^CONTAINER_SETUP_VERSION=\"[^\"]*\"$/CONTAINER_SETUP_VERSION=\"$VERSION\"/" setup.sh
+
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add setup.sh
+            git commit -m "chore(release): update setup.sh to $VERSION"
+            git push origin "HEAD:${{ github.ref_name }}"
+          fi
+
+          echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  quality:
+    name: Lint and Test
+    needs: prepare
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -67,7 +143,9 @@ jobs:
 
   build:
     name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
-    needs: quality
+    needs:
+      - prepare
+      - quality
     runs-on: ubuntu-latest
 
     strategy:
@@ -90,6 +168,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -105,6 +185,7 @@ jobs:
         run: |
           set -euo pipefail
           build_date="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          commit_sha="$(git rev-parse HEAD)"
           artifact="setup_${VERSION}_${GOOS}_${GOARCH}"
           mkdir -p "build/$artifact" dist
           binary="build/$artifact/setup"
@@ -116,7 +197,7 @@ jobs:
 
           CGO_ENABLED=0 go build \
             -trimpath \
-            -ldflags "-s -w -X github.com/strukturpiloten/container-setup.Version=$VERSION -X github.com/strukturpiloten/container-setup.Commit=$GITHUB_SHA -X github.com/strukturpiloten/container-setup.BuildDate=$build_date" \
+            -ldflags "-s -w -X github.com/strukturpiloten/container-setup.Version=$VERSION -X github.com/strukturpiloten/container-setup.Commit=$commit_sha -X github.com/strukturpiloten/container-setup.BuildDate=$build_date" \
             -o "$binary" \
             ./cmd/setup
 
@@ -132,7 +213,9 @@ jobs:
 
   publish:
     name: Publish GitHub Release
-    needs: build
+    needs:
+      - prepare
+      - build
     runs-on: ubuntu-latest
 
     steps:
@@ -152,6 +235,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.version }}
+          target_commitish: ${{ needs.prepare.outputs.source_sha }}
           name: setup ${{ inputs.version }}
           generate_release_notes: true
           prerelease: ${{ contains(inputs.version, '-') }}

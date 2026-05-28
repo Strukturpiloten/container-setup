@@ -1,0 +1,234 @@
+---
+name: ${PODMAN_NAMESPACE}-${PODMAN_SERVICE}-${PODMAN_STAGE}
+networks:
+  backend:
+    name: ${PODMAN_NAMESPACE}-${PODMAN_SERVICE}-${PODMAN_STAGE}-network-backend
+    driver: bridge
+    enable_ipv4: true
+    enable_ipv6: true
+{{- if .UseReverseProxy }}
+  reverse-proxy:
+    name: {{ printf "%q" .ReverseProxyNetworkName }}
+    external: true
+{{- end }}
+services:
+  phpfpm:
+    hostname: phpfpm
+    image: ${PODMAN_NAMESPACE}-${PODMAN_SERVICE}-${PODMAN_STAGE}-phpfpm:latest
+    restart: unless-stopped
+    networks:
+      - backend
+    user: "${PODMAN_USER_UID}:${PODMAN_GROUP_GID}"
+    userns_mode: "keep-id"
+    volumes:
+      # shared
+      - ${PODMAN_PHPFPM_CONF_FILE_HOST}:${PODMAN_PHPFPM_CONF_FILE_CONTAINER}:ro,z
+      - ${PODMAN_PHPFPM_INI_FILE_HOST}:${PODMAN_PHPFPM_INI_FILE_CONTAINER}:ro,z
+      # - ${PODMAN_PHPFPM_HEALTHCHECK_FILE_HOST}:${PODMAN_PHPFPM_HEALTHCHECK_FILE_CONTAINER}:ro,z
+      - ${PODMAN_TYPO3_DATA_DIR_HOST}:${PODMAN_TYPO3_DATA_DIR_CONTAINER}:z
+    environment:
+      # Storage
+      - PODMAN_TYPO3_DATA_DIR_CONTAINER=${PODMAN_TYPO3_DATA_DIR_CONTAINER}
+      # DatabaseSQL
+      - DATABASE_SQL_SERVICE=${DATABASE_SQL_SERVICE}
+      - DATABASE_SQL_HOST=${DATABASE_SQL_HOST}
+      - DATABASE_SQL_PORT=${DATABASE_SQL_PORT}
+      - DATABASE_SQL_NAME=${DATABASE_SQL_NAME}
+      - DATABASE_SQL_USER=${DATABASE_SQL_USER}
+      - DATABASE_SQL_PASSWORD=${DATABASE_SQL_PASSWORD}
+      # Typo3
+      - TYPO3_VERSION=${TYPO3_VERSION}
+    depends_on:
+      {{ .DatabaseSQLService }}:
+        condition: service_healthy
+        required: true
+      manager:
+        # condition: service_healthy
+        condition: service_started
+        required: true
+  installer:
+    hostname: installer
+    restart: "no"
+    image: ${PODMAN_NAMESPACE}-${PODMAN_SERVICE}-${PODMAN_STAGE}-phpfpm:latest
+    pull_policy: never
+    networks:
+      - backend
+    user: "${PODMAN_USER_UID}:${PODMAN_GROUP_GID}"
+    userns_mode: "keep-id"
+    command: [ "sh", "/etc/entrypoint.sh" ]
+    volumes:
+      # private
+      - ${PODMAN_INSTALLER_ENTRYPOINT_SCRIPT_FILE_HOST}:${PODMAN_INSTALLER_ENTRYPOINT_SCRIPT_FILE_CONTAINER}:ro,Z
+      # - ${PODMAN_INSTALLER_TYPO3_CONFIG_SCRIPT_FILE_HOST}:${PODMAN_INSTALLER_TYPO3_CONFIG_SCRIPT_FILE_CONTAINER}:ro,Z
+      # - ${PODMAN_INSTALLER_TYPO3_SETUP_SCRIPT_FILE_HOST}:${PODMAN_INSTALLER_TYPO3_SETUP_SCRIPT_FILE_CONTAINER}:ro,Z
+      # shared
+      - ${PODMAN_PHPFPM_CONF_FILE_HOST}:${PODMAN_PHPFPM_CONF_FILE_CONTAINER}:ro,z
+      - ${PODMAN_PHPFPM_INI_FILE_HOST}:${PODMAN_PHPFPM_INI_FILE_CONTAINER}:ro,z
+      - ${PODMAN_TYPO3_DATA_DIR_HOST}:${PODMAN_TYPO3_DATA_DIR_CONTAINER}:z
+    depends_on:
+      {{ .DatabaseSQLService }}:
+        condition: service_healthy
+        required: true
+    environment:
+      # Storage
+      - PODMAN_INSTALLER_TYPO3_CONFIG_SCRIPT_FILE_CONTAINER=${PODMAN_INSTALLER_TYPO3_CONFIG_SCRIPT_FILE_CONTAINER}
+      - PODMAN_INSTALLER_TYPO3_SETUP_SCRIPT_FILE_CONTAINER=${PODMAN_INSTALLER_TYPO3_SETUP_SCRIPT_FILE_CONTAINER}
+      - PODMAN_PHPFPM_CONF_FILE_CONTAINER=${PODMAN_PHPFPM_CONF_FILE_CONTAINER}
+      - PODMAN_PHPFPM_INI_FILE_CONTAINER=${PODMAN_PHPFPM_INI_FILE_CONTAINER}
+      - PODMAN_TYPO3_DATA_DIR_CONTAINER=${PODMAN_TYPO3_DATA_DIR_CONTAINER}
+      - PODMAN_TYPO3_USER_DATA_DIR_CONTAINER=${PODMAN_TYPO3_USER_DATA_DIR_CONTAINER}
+      # DatabaseSQL
+      - DATABASE_SQL_SERVICE=${DATABASE_SQL_SERVICE}
+      - DATABASE_SQL_HOST=${DATABASE_SQL_HOST}
+      - DATABASE_SQL_PORT=${DATABASE_SQL_PORT}
+      - DATABASE_SQL_NAME=${DATABASE_SQL_NAME}
+      - DATABASE_SQL_USER=${DATABASE_SQL_USER}
+      - DATABASE_SQL_PASSWORD=${DATABASE_SQL_PASSWORD}
+      # Typo3
+      - TYPO3_VERSION=${TYPO3_VERSION}
+      - TYPO3_COMPOSER_PACKAGE=${TYPO3_COMPOSER_PACKAGE}
+      - TYPO3_BIN_RELATIVE_PATH=${TYPO3_BIN_RELATIVE_PATH}
+      - TYPO3_DB_DRIVER=${TYPO3_DB_DRIVER}
+      - TYPO3_DISTRIBUTION=${TYPO3_DISTRIBUTION}
+      - TYPO3_PROJECT_NAME=${TYPO3_PROJECT_NAME}
+      - TYPO3_SERVER_TYPE=${TYPO3_SERVER_TYPE}
+      - TYPO3_SETUP_ADMIN_USERNAME=${TYPO3_SETUP_ADMIN_USERNAME}
+      - TYPO3_SETUP_ADMIN_PASSWORD=${TYPO3_SETUP_ADMIN_PASSWORD}
+      - TYPO3_SETUP_ADMIN_EMAIL=${TYPO3_SETUP_ADMIN_EMAIL}
+      - TYPO3_SETUP_CREATE_SITE=${TYPO3_SETUP_CREATE_SITE}
+      - TYPO3_OPTIONAL_INSTALL_COMMANDS=${TYPO3_OPTIONAL_INSTALL_COMMANDS}
+  manager:
+    hostname: manager
+    restart: unless-stopped
+    image: ${PODMAN_NAMESPACE}-${PODMAN_SERVICE}-${PODMAN_STAGE}-phpfpm:latest
+    pull_policy: never
+    networks:
+      - backend
+    user: "${PODMAN_USER_UID}:${PODMAN_GROUP_GID}"
+    userns_mode: "keep-id"
+    command: [ "sh", "/etc/entrypoint.sh" ]
+    volumes:
+      # private
+      - ${PODMAN_MANAGER_CRON_ROOT_FILE_HOST}:${PODMAN_MANAGER_CRON_ROOT_FILE_CONTAINER}:ro,Z
+      - ${PODMAN_MANAGER_ENTRYPOINT_SCRIPT_FILE_HOST}:${PODMAN_MANAGER_ENTRYPOINT_SCRIPT_FILE_CONTAINER}:ro,Z
+      # shared
+      - ${PODMAN_PHPFPM_CONF_FILE_HOST}:${PODMAN_PHPFPM_CONF_FILE_CONTAINER}:ro,z
+      # - ${PODMAN_PHPFPM_HEALTHCHECK_FILE_HOST}:${PODMAN_PHPFPM_HEALTHCHECK_FILE_CONTAINER}:ro,z
+      - ${PODMAN_PHPFPM_INI_FILE_HOST}:${PODMAN_PHPFPM_INI_FILE_CONTAINER}:ro,z
+      - ${PODMAN_TYPO3_DATA_DIR_HOST}:${PODMAN_TYPO3_DATA_DIR_CONTAINER}:z
+    # healthcheck:
+    #   test: php -f "${PODMAN_PHPFPM_HEALTHCHECK_FILE_CONTAINER}" || exit 1
+    #   start_period: 10s
+    #   interval: 10s
+    #   timeout: 5s
+    #   retries: 4
+    depends_on:
+      {{ .DatabaseSQLService }}:
+        condition: service_healthy
+        required: true
+      installer:
+        condition: service_completed_successfully
+        required: true
+    environment:
+      # Storage
+      - PODMAN_MANAGER_CRON_ROOT_FILE_CONTAINER=${PODMAN_MANAGER_CRON_ROOT_FILE_CONTAINER}
+      - PODMAN_PHPFPM_CONF_FILE_CONTAINER=${PODMAN_PHPFPM_CONF_FILE_CONTAINER}
+      - PODMAN_PHPFPM_INI_FILE_CONTAINER=${PODMAN_PHPFPM_INI_FILE_CONTAINER}
+      # - PODMAN_PHPFPM_HEALTHCHECK_FILE_CONTAINER=${PODMAN_PHPFPM_HEALTHCHECK_FILE_CONTAINER}
+      - PODMAN_TYPO3_DATA_DIR_CONTAINER=${PODMAN_TYPO3_DATA_DIR_CONTAINER}
+      # DatabaseSQL
+      - DATABASE_SQL_SERVICE=${DATABASE_SQL_SERVICE}
+      - DATABASE_SQL_HOST=${DATABASE_SQL_HOST}
+      - DATABASE_SQL_PORT=${DATABASE_SQL_PORT}
+      - DATABASE_SQL_NAME=${DATABASE_SQL_NAME}
+      - DATABASE_SQL_USER=${DATABASE_SQL_USER}
+      - DATABASE_SQL_PASSWORD=${DATABASE_SQL_PASSWORD}
+      # Typo3
+      - TYPO3_VERSION=${TYPO3_VERSION}
+{{- if .UseMariaDB }}
+  mariadb:
+    hostname: mariadb
+    image: ${PODMAN_MARIADB_IMAGE}
+    restart: unless-stopped
+    networks:
+      - backend
+    userns_mode: "keep-id:uid=999,gid=999"
+    volumes:
+      # private
+      - ${PODMAN_MARIADB_DATA_DIR_HOST}:${PODMAN_MARIADB_DATA_DIR_CONTAINER}:Z
+      # Uncomment if you want to use a custom mariadb.conf file:
+      # - ${PODMAN_MARIADB_CONF_FILE_HOST}:${PODMAN_MARIADB_CONF_FILE_CONTAINER}:ro,Z
+    healthcheck:
+      test: [ "CMD", "healthcheck.sh", "--connect", "--innodb_initialized", "--mariadbupgrade" ]
+      start_period: 10s
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    environment:
+      - MARIADB_DATABASE=${DATABASE_SQL_NAME}
+      - MARIADB_USER=${DATABASE_SQL_USER}
+      - MARIADB_PASSWORD=${DATABASE_SQL_PASSWORD}
+      - MARIADB_ROOT_PASSWORD=${MARIADB_ROOT_PASSWORD}
+      - MARIADB_AUTO_UPGRADE=${MARIADB_AUTO_UPGRADE}
+{{- end }}
+  nginx:
+    hostname: nginx
+    image: ${PODMAN_NGINX_IMAGE}
+    restart: unless-stopped
+    networks:
+      - backend
+{{- if .UseReverseProxy }}
+      - reverse-proxy
+{{- end }}
+    user: "${PODMAN_USER_UID}:${PODMAN_GROUP_GID}"
+    userns_mode: "keep-id"
+    volumes:
+      # private
+      - ${PODMAN_NGINX_CONF_DIR_HOST}:${PODMAN_NGINX_CONF_DIR_CONTAINER}:ro,Z
+{{- if not .UseReverseProxy }}
+      - ${PODMAN_SSL_DIR_HOST}:${PODMAN_NGINX_SSL_DIR_CONTAINER}:ro,Z
+{{- end }}
+      # shared
+      - ${PODMAN_TYPO3_DATA_DIR_HOST}:${PODMAN_TYPO3_DATA_DIR_CONTAINER}:z
+{{- if not .UseReverseProxy }}
+    ports:
+      - 80:8080
+      # - 80:80/udp
+      - 443:8443
+      # - 443:443/udp
+{{- end }}
+    # healthcheck:
+    #   test: curl -sSfk "https://localhost:8443/status.php" | grep '"installed":true' | grep '"needsDbUpgrade":false' || exit 1
+    #   interval: 10s
+    #   timeout: 5s
+    #   retries: 3
+    depends_on:
+      phpfpm:
+        # condition: service_healthy
+        condition: service_started
+        required: true
+{{- if .UsePostgreSQL }}
+  postgresql:
+    hostname: postgresql
+    image: ${PODMAN_POSTGRES_IMAGE}
+    restart: unless-stopped
+    networks:
+      - backend
+    user: "${PODMAN_USER_UID}:${PODMAN_GROUP_GID}"
+    userns_mode: "keep-id"
+    volumes:
+      # private
+      - ${PODMAN_POSTGRES_DATA_DIR_HOST}:${PODMAN_POSTGRES_DATA_DIR_CONTAINER}:Z
+      # Uncomment if you want to use a custom postgresql.conf file:
+      # - ${PODMAN_POSTGRES_CONF_FILE_HOST}:${PODMAN_POSTGRES_CONF_FILE_CONTAINER}:ro,Z
+    environment:
+      - POSTGRES_DB=${DATABASE_SQL_NAME}
+      - POSTGRES_USER=${DATABASE_SQL_USER}
+      - POSTGRES_PASSWORD=${DATABASE_SQL_PASSWORD}
+    healthcheck:
+      test: [ "CMD", "pg_isready", "-U", "${DATABASE_SQL_USER}", "-d", "${DATABASE_SQL_NAME}" ]
+      start_period: 10s
+      interval: 10s
+      timeout: 5s
+      retries: 3
+{{- end }}
