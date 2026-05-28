@@ -15,8 +15,7 @@
     },
     "pep621": {
         "managerFilePatterns": [
-            "/(^|/)pyproject\\.toml$/",
-            "/(^|/)pyproject-lint\\.toml$/"
+            "/(^|/)pyproject\\.toml$/"
         ]
     },
     "customManagers": [
@@ -66,7 +65,7 @@
                 "pep621"
             ],
             "matchFileNames": [
-                "pyproject-lint.toml"
+                "pyproject.toml"
             ],
             "groupName": "Python lint tools"
         },
