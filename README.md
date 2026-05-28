@@ -9,8 +9,8 @@
 - [Using a release in a container project](#using-a-release-in-a-container-project-)
 - [The setup.yaml model](#the-setupyaml-model-)
 - [The example directory](#the-example-directory-)
-- [CLI flags](#cli-flags-)
-- [Development](#development-)
+- [CLI flags](#cli-flags-%EF%B8%8F)
+- [Development](#development-%EF%B8%8F)
 - [Contribution](#contribution-)
 - [Future Plans](#future-plans-)
 
@@ -116,7 +116,11 @@ Install the repository-managed Git hooks once per clone:
 ./scripts/install-hooks.sh
 ```
 
-The pre-commit hook autoformats staged Go files with `gofmt`, re-stages them, and runs `go vet ./...` before the commit is created.
+The pre-commit hook checks staged files only:
+
+- staged Go files are reformatted with `gofmt`, re-staged, and then validated with `go vet ./...`
+- staged Markdown files are checked with the repository Markdown lint script
+- staged YAML files are checked with the repository YAML lint script
 
 Repository layout:
 

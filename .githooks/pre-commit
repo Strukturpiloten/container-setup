@@ -6,14 +6,29 @@ repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
 mapfile -d '' staged_go_files < <(git diff --cached --name-only -z --diff-filter=ACMR -- '*.go')
+mapfile -d '' staged_markdown_files < <(git diff --cached --name-only -z --diff-filter=ACMR -- '*.md' '*.markdown')
+mapfile -d '' staged_yaml_files < <(git diff --cached --name-only -z --diff-filter=ACMR -- '*.yml' '*.yaml')
 
-if [ "${#staged_go_files[@]}" -eq 0 ]; then
+
+if [ "${#staged_go_files[@]}" -eq 0 ] && [ "${#staged_markdown_files[@]}" -eq 0 ] && [ "${#staged_yaml_files[@]}" -eq 0 ]; then
 	exit 0
 fi
 
-echo "Formatting staged Go files..."
-gofmt -w "${staged_go_files[@]}"
-git add "${staged_go_files[@]}"
+if [ "${#staged_go_files[@]}" -gt 0 ]; then
+	echo "Formatting staged Go files..."
+	gofmt -w "${staged_go_files[@]}"
+	git add "${staged_go_files[@]}"
 
-echo "Running go vet..."
-go vet ./...
+	echo "Running go vet..."
+	go vet ./...
+fi
+
+if [ "${#staged_markdown_files[@]}" -gt 0 ]; then
+	echo "Running Markdown lint..."
+	./scripts/lint-markdown.sh "${staged_markdown_files[@]}"
+fi
+
+if [ "${#staged_yaml_files[@]}" -gt 0 ]; then
+	echo "Running YAML lint..."
+	./scripts/lint-yaml.sh "${staged_yaml_files[@]}"
+fi
