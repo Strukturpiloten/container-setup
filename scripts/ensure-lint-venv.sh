@@ -5,7 +5,7 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/.." && pwd)"
 venv_dir="$repo_root/.cache/lint-venv"
-project_file="$repo_root/pyproject-lint.toml"
+project_file="$repo_root/pyproject.toml"
 lock_file="$repo_root/uv.lock"
 lint_project_dir="$repo_root/.cache/lint-project"
 stamp_file="$venv_dir/.lint-project.sha256"
