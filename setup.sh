@@ -2,7 +2,7 @@
 set -eu
 unset CDPATH
 
-CONTAINER_SETUP_VERSION="v0.0.0-alpha"
+CONTAINER_SETUP_VERSION="v1.2.0"
 CONTAINER_SETUP_REPOSITORY="Strukturpiloten/container-setup"
 
 die() {
