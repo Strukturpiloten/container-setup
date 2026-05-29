@@ -23,7 +23,7 @@ jobs:
     name: Prepare release source
     runs-on: ubuntu-latest
     outputs:
-      source_sha: ${{ steps.update-source.outputs.source_sha }}
+      source_sha: ${{ steps.capture-source.outputs.source_sha }}
 
     steps:
       - name: Validate release version
@@ -64,8 +64,8 @@ jobs:
             "$api_url/git/ref/tags/$version")"
           case "$tag_status" in
             200)
-              echo "Git tag $version already exists. Refusing to publish a duplicate release version."
-              exit 1
+              echo "Git tag $version already exists."
+              echo "The workflow will reuse the existing tag because no GitHub release was found."
               ;;
             404)
               ;;
@@ -80,28 +80,10 @@ jobs:
         with:
           ref: ${{ github.ref_name }}
 
-      - name: Update setup helper version
-        id: update-source
-        env:
-          VERSION: ${{ inputs.version }}
+      - name: Capture release source
+        id: capture-source
         run: |
           set -euo pipefail
-
-          current_version="$(sed -n 's/^CONTAINER_SETUP_VERSION="\([^"]*\)"$/\1/p' setup.sh)"
-          if [ -z "$current_version" ]; then
-            echo "Could not read CONTAINER_SETUP_VERSION from setup.sh."
-            exit 1
-          fi
-
-          if [ "$current_version" != "$VERSION" ]; then
-            sed -i "s/^CONTAINER_SETUP_VERSION=\"[^\"]*\"$/CONTAINER_SETUP_VERSION=\"$VERSION\"/" setup.sh
-
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add setup.sh
-            git commit -m "chore(release): update setup.sh to $VERSION"
-            git push origin "HEAD:${{ github.ref_name }}"
-          fi
 
           echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
@@ -244,6 +226,42 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
+
+      - name: Prepare versioned setup helper and release tag
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          sed -i "s/^CONTAINER_SETUP_VERSION=\"[^\"]*\"$/CONTAINER_SETUP_VERSION=\"$VERSION\"/" setup.sh
+          if ! grep -qx "CONTAINER_SETUP_VERSION=\"$VERSION\"" setup.sh; then
+            echo "Could not write CONTAINER_SETUP_VERSION=$VERSION to setup.sh."
+            exit 1
+          fi
+
+          cp setup.sh dist/setup.sh
+          chmod +x dist/setup.sh
+
+          if git ls-remote --exit-code --tags origin "refs/tags/$VERSION" >/dev/null 2>&1; then
+            echo "Git tag $VERSION already exists. Reusing the existing release tag."
+            exit 0
+          fi
+
+          git config user.name "Github Action"
+          git config user.email "action@github.com"
+
+          if ! git diff --quiet -- setup.sh; then
+            git add setup.sh
+            git commit -m "chore(release): prepare $VERSION bundle"
+          fi
+
+          git tag "$VERSION"
+          git push origin "refs/tags/$VERSION"
+
       - name: Generate checksums
         run: |
           set -euo pipefail
@@ -254,7 +272,6 @@ jobs:
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         with:
           tag_name: ${{ inputs.version }}
-          target_commitish: ${{ needs.prepare.outputs.source_sha }}
           name: setup ${{ inputs.version }}
           generate_release_notes: true
           prerelease: ${{ contains(inputs.version, '-') }}
