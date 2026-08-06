@@ -1,9 +1,9 @@
 [project]
 name = "container-setup-lint"
 version = "0.0.0"
-requires-python = ">=3.14.5"
+requires-python = ">=3.14.7"
 dependencies = [
-    "pymarkdownlnt==0.9.37",
+    "pymarkdownlnt==0.9.39",
     "yamllint==1.38.0",
 ]
 
